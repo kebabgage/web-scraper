@@ -50,78 +50,115 @@ const scrapeValues = [
     searchValue: "Add to cart",
     unavailableText: "Currently unavailable.",
   },
+  {
+    name: "Sony",
+    url: "https://store.sony.com.au/gaming#prefn1=series&prefv1=PlayStation%205",
+    searchValue: "$750",
+    unavailableText: null,
+  },
+  {
+    name: "Big W",
+    url: "https://www.bigw.com.au/product/playstation-5-console/p/124625",
+    searchValue: null,
+    unavailableText: "Coming Soon",
+  },
+  {
+    name: "EB Games",
+    url: "https://www.ebgames.com.au/product/ps5/267678-playstation-5-console",
+    searchValue: null,
+    unavailableText: "The page may have been moved or deleted",
+  },
 ];
+
+// The instant one
+// cronRunner(scrapeValues);
 
 // Schedule tasks to be run on the server.
 cron.schedule("* * * * *", async function () {
-  console.log("Running the checker");
-  await cronRunner(scrapeValues);
+  console.log(`[${new Date().toUTCString()}] Restarting cron job`);
+  await cronRunner(process.env.TEST === "true" ? testValues : scrapeValues);
 });
 
 // This function runs the check on the values in values
 async function cronRunner(values) {
   let browser;
 
-  //   try {
-  browser = await puppeteer.launch({
-    headless: true,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-infobars",
-      "--disable-features=site-per-process",
-      "--window-position=0,0",
-      "--disable-extensions",
-      '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X   10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3312.0    Safari/537.36"',
-    ],
-  });
+  try {
+    console.log(`[${new Date().toUTCString()}] Trying to open browser`);
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-infobars",
+        "--disable-features=site-per-process",
+        "--window-position=0,0",
+        "--disable-extensions",
+        '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X   10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3312.0    Safari/537.36"',
+      ],
+    });
 
-  // Iterate through the values given
-  values.forEach(async (value) => {
-    const { name, url, searchValue, unavailableText } = value;
-    console.log("------------------");
-    console.log(`[${new Date().toUTCString()}] Checking ${name}`);
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "load", timeout: 100000 });
+    // Iterate through the values given
+    const promises = await Promise.allSettled(
+      values.map(async (value) => {
+        const { name, url, searchValue, unavailableText } = value;
+        console.log(`[${new Date().toUTCString()}] Checking ${name}`);
+        const page = await browser.newPage();
+        await page.setUserAgent(
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36"
+        );
 
-    // Tries to find the text
-    let found;
-    if (searchValue) {
-      found = await page.evaluate((searchValue) => {
-        return window.find(searchValue);
-      }, searchValue);
-    }
+        await page.goto(url, { waitUntil: "load", timeout: 100000 });
 
-    // Tries to find
-    let notFound;
-    if (unavailableText) {
-      notFound = await page.evaluate((unavailableText) => {
-        return window.find(unavailableText);
-      }, unavailableText);
-    }
-
-    if (found === true || notFound === false) {
-      var mailOptions = {
-        from: process.env.EMAIL,
-        to: process.env.EMAIL,
-        subject: `Playstation Found at ${name}`,
-        text: `Check it out here: ${url}`,
-      };
-
-      transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-          console.log(`[${new Date().toUTCString()}] ${error}`);
-        } else {
-          console.log(
-            `[${new Date().toUTCString()}] Email sent. Found at ${name} `
-          );
+        // Tries to find the text
+        let found;
+        if (searchValue) {
+          found = await page.evaluate((searchValue) => {
+            return window.find(searchValue);
+          }, searchValue);
         }
-      });
-    } else {
-      console.log(`[${new Date().toUTCString()}] Not found at ${name}`);
-    }
-  });
-  //   } catch (e) {
-  //     console.log(`[${Date.now()}] Error with ${url}`);
-  //   }
+
+        // Tries to find
+        let notFound;
+        if (unavailableText) {
+          notFound = await page.evaluate((unavailableText) => {
+            return window.find(unavailableText);
+          }, unavailableText);
+        }
+
+        if (found === true || notFound === false) {
+          console.log(
+            `[${new Date().toUTCString()}] FOUND -------------------------- | ${name}`
+          );
+          var mailOptions = {
+            from: process.env.EMAIL,
+            to: process.env.EMAIL,
+            subject: `Playstation Found at ${name}`,
+            text: `Check it out here: ${url}`,
+          };
+
+          transporter.sendMail(mailOptions, function (error, info) {
+            if (error) {
+              console.log(`[${new Date().toUTCString()}] ${error}`);
+            } else {
+              console.log(
+                `[${new Date().toUTCString()}] Email sent. Found at ${name} `
+              );
+            }
+          });
+        } else {
+          console.log(`[${new Date().toUTCString()}] Not found at ${name}`);
+        }
+
+        return 0;
+      })
+    );
+    console.log(`[${new Date().toUTCString()}] Closing browser...`);
+    await browser.close();
+  } catch (e) {
+    console.log(`[${new Date().toUTCString()}] Error with ${url} {${e}}`);
+  }
 }
