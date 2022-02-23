@@ -41,7 +41,7 @@ const scrapeValues = [
   {
     name: "Target",
     url: "https://www.target.com/c/playstation-5-video-games/-/N-hj96d",
-    searchValue: "Add to cart",
+    searchValue: null,
     unavailableText: "Consoles will be viewable when inventory is available",
   },
   {
@@ -53,19 +53,18 @@ const scrapeValues = [
 ];
 
 // Schedule tasks to be run on the server.
-// cron.schedule("* * * * *", async function () {
-//   console.log("Running the checker");
-//   await cronRunner(scrapeValues);
-// });
+cron.schedule("* * * * *", async function () {
+  console.log("Running the checker");
+  await cronRunner(scrapeValues);
+});
 
-cronRunner(scrapeValues);
 // This function runs the check on the values in values
 async function cronRunner(values) {
   let browser;
 
   //   try {
   browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
