@@ -3,6 +3,35 @@ dotenv.config();
 const puppeteer = require("puppeteer");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
+// const request = require("request");
+// const cheerio = require("cheerio");
+
+// function proxyGenerator() {
+//   let ip_addresses = [];
+//   let port_numbers = [];
+//   let proxy;
+
+//   request("https://sslproxies.org/", function (error, response, html) {
+//     if (!error && response.statusCode == 200) {
+//       const $ = cheerio.load(html);
+
+//       $("td:nth-child(1)").each(function (index, value) {
+//         ip_addresses[index] = $(this).text();
+//       });
+
+//       $("td:nth-child(2)").each(function (index, value) {
+//         port_numbers[index] = $(this).text();
+//       });
+//     } else {
+//       console.log("Error loading proxy, please try again");
+//     }
+
+//     ip_addresses.join(", ");
+//     port_numbers.join(", ");
+
+//     console.log("IP Addresses:", ip_addresses);
+//     console.log("Port Numbers:", port_numbers);
+//   });
 
 // This is where we configure the email
 const transporter = nodemailer.createTransport({
@@ -43,30 +72,35 @@ const scrapeValues = [
     url: "https://www.target.com/c/playstation-5-video-games/-/N-hj96d",
     searchValue: null,
     unavailableText: "Consoles will be viewable when inventory is available",
+    blockedIPText: null,
   },
   {
     name: "Amazon",
     url: "https://www.amazon.com.au/PlayStation-5-Console/dp/B08HHV8945?_encoding=UTF8&linkCode=sl1&tag=australiaps5-22&linkId=2819c0dd9b995cf7cbdf5a3d5809c6cc&language=en_AU&ref_=as_li_ss_tl",
     searchValue: "Add to cart",
     unavailableText: "Currently unavailable.",
+    blockedIPText: "Server busy",
   },
   {
     name: "Sony",
     url: "https://store.sony.com.au/gaming#prefn1=series&prefv1=PlayStation%205",
     searchValue: "$750",
     unavailableText: null,
+    blockedIPText: null,
   },
   {
     name: "Big W",
     url: "https://www.bigw.com.au/product/playstation-5-console/p/124625",
     searchValue: null,
     unavailableText: "Coming Soon",
+    blockedIPText: null,
   },
   {
     name: "EB Games",
     url: "https://www.ebgames.com.au/product/ps5/267678-playstation-5-console",
     searchValue: null,
     unavailableText: "The page may have been moved or deleted",
+    blockedIPText: null,
   },
 ];
 
@@ -76,6 +110,7 @@ const scrapeValues = [
 // Schedule tasks to be run on the server.
 cron.schedule("* * * * *", async function () {
   console.log(`[${new Date().toUTCString()}] Restarting cron job`);
+  // proxyGenerator();
   await cronRunner(process.env.TEST === "true" ? testValues : scrapeValues);
 });
 
@@ -104,7 +139,8 @@ async function cronRunner(values) {
     // Iterate through the values given
     const promises = await Promise.allSettled(
       values.map(async (value) => {
-        const { name, url, searchValue, unavailableText } = value;
+        const { name, url, searchValue, unavailableText, blockedIPText } =
+          value;
         console.log(`[${new Date().toUTCString()}] Checking ${name}`);
         const page = await browser.newPage();
         await page.setUserAgent(
@@ -113,44 +149,58 @@ async function cronRunner(values) {
 
         await page.goto(url, { waitUntil: "load", timeout: 100000 });
 
-        // Tries to find the text
-        let found;
-        if (searchValue) {
-          found = await page.evaluate((searchValue) => {
-            return window.find(searchValue);
-          }, searchValue);
+        // Tries to find the text that shows the IP was blocked
+        let weAreBlocked;
+        if (blockedIPText) {
+          weAreBlocked = await page.evaluate((blockedIPText) => {
+            return window.find(blockedIPText);
+          }, blockedIPText);
         }
 
-        // Tries to find
-        let notFound;
-        if (unavailableText) {
-          notFound = await page.evaluate((unavailableText) => {
-            return window.find(unavailableText);
-          }, unavailableText);
-        }
-
-        if (found === true || notFound === false) {
+        if (weAreBlocked) {
           console.log(
-            `[${new Date().toUTCString()}] FOUND -------------------------- | ${name}`
+            `[${new Date().toUTCString()}] We are blocked by ${name}`
           );
-          var mailOptions = {
-            from: process.env.EMAIL,
-            to: process.env.EMAIL,
-            subject: `Playstation Found at ${name}`,
-            text: `Check it out here: ${url}`,
-          };
-
-          transporter.sendMail(mailOptions, function (error, info) {
-            if (error) {
-              console.log(`[${new Date().toUTCString()}] ${error}`);
-            } else {
-              console.log(
-                `[${new Date().toUTCString()}] Email sent. Found at ${name} `
-              );
-            }
-          });
         } else {
-          console.log(`[${new Date().toUTCString()}] Not found at ${name}`);
+          // Tries to find the text
+          let found;
+          if (searchValue) {
+            found = await page.evaluate((searchValue) => {
+              return window.find(searchValue);
+            }, searchValue);
+          }
+
+          // Tries to find
+          let notFound;
+          if (unavailableText) {
+            notFound = await page.evaluate((unavailableText) => {
+              return window.find(unavailableText);
+            }, unavailableText);
+          }
+
+          if (found === true || notFound === false) {
+            console.log(
+              `[${new Date().toUTCString()}] FOUND -------------------------- | ${name}`
+            );
+            var mailOptions = {
+              from: process.env.EMAIL,
+              to: process.env.EMAIL,
+              subject: `Playstation Found at ${name}`,
+              text: `Check it out here: ${url}`,
+            };
+
+            transporter.sendMail(mailOptions, function (error, info) {
+              if (error) {
+                console.log(`[${new Date().toUTCString()}] ${error}`);
+              } else {
+                console.log(
+                  `[${new Date().toUTCString()}] Email sent. Found at ${name} `
+                );
+              }
+            });
+          } else {
+            console.log(`[${new Date().toUTCString()}] Not found at ${name}`);
+          }
         }
 
         return 0;
